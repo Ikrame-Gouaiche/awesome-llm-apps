@@ -20,7 +20,7 @@ from agno.models.openai import OpenAIChat
 
 # Central model config — override via MODEL_RISK env var
 import os
-DEFAULT_MODEL = os.environ.get("MODEL_RISK", "gpt-4.1-mini")
+DEFAULT_MODEL = os.environ.get("MODEL_RISK", "google/gemini-2.5-flash-lite")
 
 
 class RiskAgent:
@@ -51,7 +51,11 @@ class RiskAgent:
         self.model_id = model_id or DEFAULT_MODEL
         self.agent = Agent(
             name="Risk Assessor",
-            model=OpenAIChat(id=self.model_id),
+            model=OpenAIChat(
+                id=self.model_id,
+                api_key=os.environ.get("OPENROUTER_API_KEY"),
+                base_url="https://openrouter.ai/api/v1",
+            ),
             role="Assesses security and breaking change risks in technical signals",
             instructions=[
                 "Analyze signals for security vulnerabilities.",

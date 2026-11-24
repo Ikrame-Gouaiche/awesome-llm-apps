@@ -1,6 +1,9 @@
 import streamlit as st
 import os
 from typing import List, Dict, Any
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Import pipeline components from main.py and agents
 from main import collect_signals, DEFAULT_SIGNAL_LIMIT
