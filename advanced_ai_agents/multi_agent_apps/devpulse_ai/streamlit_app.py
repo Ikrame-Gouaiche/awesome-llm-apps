@@ -51,6 +51,7 @@ st.markdown("""
     .risk-medium { background: #d97706; color: white; }
     .risk-high { background: #dc2626; color: white; }
     .risk-critical { background: #7f1d1d; color: white; }
+    .risk-skipped { background: #475569; color: white; }
     
     .relevance-score {
         font-size: 1.5rem;
@@ -124,7 +125,7 @@ if run_button:
             )
             collector = SignalCollector()
             relevance = RelevanceAgent(profile=profile)
-            risk = RiskAgent()
+            risk = RiskAgent(profile=profile)
             synthesis = SynthesisAgent()
             init_status.update(label="✅ Agents ready", state="complete")
         

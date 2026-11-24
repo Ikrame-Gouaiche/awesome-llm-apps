@@ -14,9 +14,11 @@ Model Selection:
 """
 
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from agno.agent import Agent
 from agno.models.openai import OpenAIChat
+
+from config import DomainProfile, get_domain_profile
 
 # Central model config — override via MODEL_RISK env var
 import os
@@ -40,15 +42,19 @@ class RiskAgent:
     """
 
     RISK_LEVELS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    CRITICAL_BYPASS_KEYWORDS = ("cve", "vulnerability", "exploit", "breach", "zero-day", "rce")
 
-    def __init__(self, model_id: str = None):
+    def __init__(self, model_id: Optional[str] = None, profile: Optional[DomainProfile] = None):
         """
         Initialize the Risk Agent.
 
         Args:
-            model_id: OpenAI model to use. Defaults to gpt-4.1-mini.
+            model_id: OpenAI/OpenRouter model to use. Defaults to MODEL_RISK.
+            profile: Optional DomainProfile to tailor risk assessment.
         """
         self.model_id = model_id or DEFAULT_MODEL
+        self.profile = profile or get_domain_profile()
+        stack_str = ", ".join(self.profile.tech_stack)
         self.agent = Agent(
             name="Risk Assessor",
             # Route OpenAIChat through OpenRouter's OpenAI-compatible API
@@ -57,11 +63,12 @@ class RiskAgent:
                 api_key=os.environ.get("OPENROUTER_API_KEY"),
                 base_url="https://openrouter.ai/api/v1",
             ),
-            role="Assesses security and breaking change risks in technical signals",
+            role=f"Assesses security and breaking change risks for {self.profile.name}",
             instructions=[
                 "Analyze signals for security vulnerabilities.",
                 "Identify breaking changes that may affect developers.",
                 "Flag deprecation notices and migration requirements.",
+                f"Evaluate impact in the context of {self.profile.name} ({stack_str}).",
                 "Rate risk level: LOW, MEDIUM, HIGH, or CRITICAL.",
             ],
             markdown=True,
@@ -73,7 +80,10 @@ class RiskAgent:
 
         Attempts LLM assessment first, falls back to keyword heuristics.
         """
-        prompt = f"""Analyze this technical signal for risks:
+        stack_str = ", ".join(self.profile.tech_stack)
+        prompt = f"""Analyze this technical signal for risks in the '{self.profile.name}' domain:
+Domain Focus: {self.profile.domain_focus}
+Key Stack: {stack_str}
 
 Signal:
 - Source: {signal.get('source', 'unknown')}
@@ -94,11 +104,27 @@ Respond with ONLY a JSON object:
         except Exception as e:
             return self._fallback_assessment(signal, str(e))
 
-    def assess_batch(self, signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Assess multiple signals, returning each with a 'risk' key."""
+    def assess_batch(
+        self, signals: List[Dict[str, Any]], min_relevance: int = 50
+    ) -> List[Dict[str, Any]]:
+        """Assess risks, skipping low-relevance noise unless a critical keyword is present."""
         assessed = []
         for signal in signals:
-            result = self.assess(signal)
+            score = signal.get("relevance", {}).get("score", 50)
+            text = f"{signal.get('title', '')} {signal.get('description', '')}".lower()
+            has_critical_keyword = any(kw in text for kw in self.CRITICAL_BYPASS_KEYWORDS)
+
+            if score < min_relevance and not has_critical_keyword:
+                result = {
+                    "risk_level": "SKIPPED",
+                    "concerns": [f"Skipped by cost gate (relevance {score} < {min_relevance})"],
+                    "breaking_changes": False,
+                    "gated": True,
+                    "used_fallback": False,
+                }
+            else:
+                result = self.assess(signal)
+
             assessed.append({**signal, "risk": result})
         return assessed
 
@@ -108,7 +134,10 @@ Respond with ONLY a JSON object:
             text = content.strip()
             if "```" in text:
                 text = text.split("```")[1].replace("json", "").strip()
-            return json.loads(text)
+            parsed = json.loads(text)
+            parsed["gated"] = False
+            parsed["used_fallback"] = False
+            return parsed
         except (json.JSONDecodeError, IndexError):
             return self._fallback_assessment(signal, "Parse error")
 
@@ -139,4 +168,6 @@ Respond with ONLY a JSON object:
             "risk_level": risk_level,
             "concerns": concerns or [f"Heuristic (LLM unavailable: {error})"],
             "breaking_changes": "breaking" in title,
+            "gated": False,
+            "used_fallback": True,
         }

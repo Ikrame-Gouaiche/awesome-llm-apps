@@ -130,16 +130,17 @@ def run_pipeline(domain: Optional[str] = None):
     )
     print(f"  ✓ {high_relevance}/{len(scored)} signals rated high-relevance")
 
-    # Stage 4: Assess risks (agent — gpt-4.1-mini)
-    risk = RiskAgent()
+    # Stage 4: Assess risks (gated by relevance score)
+    risk = RiskAgent(profile=profile)
     print("\n⚠️  [4/4] Assessing Risks...")
     assessed = risk.assess_batch(scored)
+    gated_count = sum(1 for s in assessed if s.get("risk", {}).get("gated"))
     critical = sum(
         1
         for s in assessed
         if s.get("risk", {}).get("risk_level") in ["HIGH", "CRITICAL"]
     )
-    print(f"  ✓ {critical}/{len(assessed)} signals with elevated risk")
+    print(f"  ✓ {critical}/{len(assessed)} signals with elevated risk ({gated_count} skipped by cost gate)")
 
     # Stage 5: Synthesize digest (agent — gpt-4.1)
     synthesis = SynthesisAgent()

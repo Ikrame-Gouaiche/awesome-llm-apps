@@ -128,6 +128,7 @@ Respond with ONLY a JSON object:
                 text = text.split("```")[1].replace("json", "").strip()
             parsed = json.loads(text)
             parsed["score"] = max(0, min(100, int(round(float(parsed["score"])))))
+            parsed["used_fallback"] = False
             return parsed
         except (json.JSONDecodeError, IndexError, KeyError, TypeError, ValueError):
             return self._fallback_score(signal, "Parse error", profile=active_profile)
@@ -159,4 +160,5 @@ Respond with ONLY a JSON object:
         return {
             "score": min(score, 100),
             "reasoning": f"Heuristic score for {active_profile.name}{match_note} (LLM unavailable: {error})",
+            "used_fallback": True,
         }

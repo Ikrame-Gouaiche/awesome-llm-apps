@@ -224,8 +224,31 @@ def verify_dynamic_domains():
         f"Expected FinTech signal ({fin_for_fintech}) > k8s signal ({k8s_for_fintech}) for FinTech domain"
     )
 
+    # Verify used_fallback tracking and deterministic cost gate in RiskAgent
+    from agents import RiskAgent
+    assert fintech_agent._fallback_score(fintech_signal, "Mock mode")["used_fallback"] is True
+
+    risk_agent = RiskAgent(profile=get_domain_profile("FinTech Compliance"))
+    called_ids = []
+    risk_agent.assess = lambda sig: (
+        called_ids.append(sig["id"]) or risk_agent._fallback_assessment(sig, "Mock mode")
+    )
+    gated_inputs = [
+        {**k8s_signal, "relevance": {"score": 30, "used_fallback": True}},
+        {
+            "id": "cve-1",
+            "source": "github",
+            "title": "Critical CVE-2026-9999 in payment SDK",
+            "description": "Remote exploit vulnerability.",
+            "relevance": {"score": 30, "used_fallback": True},
+        },
+    ]
+    gated_out = risk_agent.assess_batch(gated_inputs, min_relevance=50)
+    assert gated_out[0]["risk"]["risk_level"] == "SKIPPED" and gated_out[0]["risk"]["gated"] is True
+    assert gated_out[1]["risk"]["gated"] is False and called_ids == ["cve-1"]
+
     print(
-        f"  ✓ Verified {len(DOMAIN_PRESETS)} domain presets "
+        f"  ✓ Verified {len(DOMAIN_PRESETS)} domain presets + cost gate "
         f"(Cloud={k8s_for_cloud}, FinTech={fin_for_fintech} vs off-domain={k8s_for_fintech})"
     )
 

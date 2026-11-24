@@ -98,6 +98,7 @@ class SynthesisAgent:
                 "HIGH": 1.5,
                 "MEDIUM": 1.0,
                 "LOW": 0.8,
+                "SKIPPED": 0.5,
             }.get(signal.get("risk", {}).get("risk_level", "LOW"), 1.0)
             return relevance * risk_multiplier
 
