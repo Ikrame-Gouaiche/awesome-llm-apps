@@ -6,10 +6,10 @@ Uses feedparser to fetch from RSS/Atom feeds.
 """
 
 import feedparser
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Sequence
 
 
-# Tech blog feeds to monitor
+# Default tech blog feeds to monitor
 FEEDS = [
     "https://medium.com/feed/tag/artificial-intelligence",
     "https://medium.com/feed/tag/machine-learning",
@@ -18,19 +18,21 @@ FEEDS = [
 ]
 
 
-def fetch_medium_blogs(limit: int = 5) -> List[Dict[str, Any]]:
+def fetch_medium_blogs(limit: int = 5, feeds: Optional[Sequence[str]] = None) -> List[Dict[str, Any]]:
     """
     Fetch recent tech blogs from Medium and engineering blogs.
-    
+
     Args:
         limit: Maximum number of entries per feed.
-        
+        feeds: Optional sequence of RSS/Atom feed URLs (defaults to FEEDS).
+
     Returns:
         List of signal dictionaries with standardized schema.
     """
     signals = []
-    
-    for feed_url in FEEDS:
+    target_feeds = feeds if feeds is not None else FEEDS
+
+    for feed_url in target_feeds:
         try:
             feed = feedparser.parse(feed_url)
             

@@ -6,22 +6,23 @@ Uses the Algolia HN API for better search capabilities.
 """
 
 import httpx
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 
-def fetch_hackernews_stories(limit: int = 5) -> List[Dict[str, Any]]:
+def fetch_hackernews_stories(limit: int = 5, query: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Fetch recent AI/ML related stories from HackerNews.
-    
+    Fetch recent domain-relevant stories from HackerNews.
+
     Args:
         limit: Maximum number of stories to return.
-        
+        query: Optional Algolia search query (defaults to AI/LLM terms).
+
     Returns:
         List of signal dictionaries with standardized schema.
     """
     base_url = "https://hn.algolia.com/api/v1/search_by_date"
     params = {
-        "query": "AI OR LLM OR Machine Learning OR GPT",
+        "query": query or "AI OR LLM OR Machine Learning OR GPT",
         "tags": "story",
         "hitsPerPage": limit,
         "numericFilters": "points>5"

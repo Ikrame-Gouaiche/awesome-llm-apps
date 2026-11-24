@@ -51,6 +51,7 @@ class RiskAgent:
         self.model_id = model_id or DEFAULT_MODEL
         self.agent = Agent(
             name="Risk Assessor",
+            # Route OpenAIChat through OpenRouter's OpenAI-compatible API
             model=OpenAIChat(
                 id=self.model_id,
                 api_key=os.environ.get("OPENROUTER_API_KEY"),

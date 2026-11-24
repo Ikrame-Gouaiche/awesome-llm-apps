@@ -7,22 +7,23 @@ ArXiv API is public and requires no authentication.
 
 import httpx
 import xml.etree.ElementTree as ET
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 
-def fetch_arxiv_papers(limit: int = 5) -> List[Dict[str, Any]]:
+def fetch_arxiv_papers(limit: int = 5, search_query: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Fetch recent AI/ML papers from ArXiv.
-    
+    Fetch recent research papers from ArXiv.
+
     Args:
         limit: Maximum number of papers to return.
-        
+        search_query: Optional ArXiv category/search filter (defaults to cs.AI/cs.LG).
+
     Returns:
         List of signal dictionaries with standardized schema.
     """
     base_url = "https://export.arxiv.org/api/query"
     params = {
-        "search_query": "cat:cs.AI OR cat:cs.LG",
+        "search_query": search_query or "cat:cs.AI OR cat:cs.LG",
         "start": 0,
         "max_results": limit,
         "sortBy": "submittedDate",

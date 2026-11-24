@@ -180,6 +180,56 @@ def verify_synthesis_agent(signals: List[Dict]):
     return digest
 
 
+def verify_dynamic_domains():
+    """Verify domain presets and dynamic relevance scoring across domains."""
+    print("[6/6] Verifying Dynamic Domain Relevance & Presets...")
+
+    from config import DOMAIN_PRESETS, get_domain_profile
+    from agents import RelevanceAgent
+
+    for required in ("AI/ML Engineering", "FinTech Compliance", "Cloud Infrastructure"):
+        assert required in DOMAIN_PRESETS, f"Missing preset: {required}"
+
+    k8s_signal = {
+        "id": "k8s-1",
+        "source": "github",
+        "title": "Kubernetes autoscaler for multi-region cloud clusters",
+        "description": "Terraform and Docker tooling for distributed cloud infrastructure and observability.",
+        "url": "https://example.com/k8s",
+        "metadata": {"stars": 50},
+    }
+    fintech_signal = {
+        "id": "fin-1",
+        "source": "hackernews",
+        "title": "Open-source SOC2 and GDPR audit trail engine for FinTech APIs",
+        "description": "Automates PCI compliance, KYC encryption, and regulatory risk reporting.",
+        "url": "https://example.com/fintech",
+        "metadata": {"points": 20},
+    }
+
+    cloud_agent = RelevanceAgent(profile=get_domain_profile("Cloud Infrastructure"))
+    fintech_agent = RelevanceAgent(profile=get_domain_profile("FinTech Compliance"))
+
+    assert "Cloud Infrastructure" in cloud_agent.build_prompt(k8s_signal)
+    assert "FinTech Compliance" in fintech_agent.build_prompt(fintech_signal)
+
+    k8s_for_cloud = cloud_agent._fallback_score(k8s_signal, "Mock mode")["score"]
+    k8s_for_fintech = fintech_agent._fallback_score(k8s_signal, "Mock mode")["score"]
+    fin_for_fintech = fintech_agent._fallback_score(fintech_signal, "Mock mode")["score"]
+
+    assert k8s_for_cloud > k8s_for_fintech, (
+        f"Expected Cloud Infrastructure ({k8s_for_cloud}) > FinTech ({k8s_for_fintech}) for k8s signal"
+    )
+    assert fin_for_fintech > k8s_for_fintech, (
+        f"Expected FinTech signal ({fin_for_fintech}) > k8s signal ({k8s_for_fintech}) for FinTech domain"
+    )
+
+    print(
+        f"  ✓ Verified {len(DOMAIN_PRESETS)} domain presets "
+        f"(Cloud={k8s_for_cloud}, FinTech={fin_for_fintech} vs off-domain={k8s_for_fintech})"
+    )
+
+
 # ────────────────────────────────────────────────
 # Main verification runner
 # ────────────────────────────────────────────────
@@ -201,6 +251,7 @@ def run_verification():
         scored = verify_relevance_agent(normalized)
         assessed = verify_risk_agent(scored)
         digest = verify_synthesis_agent(assessed)
+        verify_dynamic_domains()
 
         elapsed = time.time() - start
 

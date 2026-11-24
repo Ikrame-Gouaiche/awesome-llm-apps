@@ -7,24 +7,26 @@ No authentication required for basic public API access.
 
 import httpx
 from datetime import datetime, timedelta
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 
-def fetch_github_trending(limit: int = 5) -> List[Dict[str, Any]]:
+def fetch_github_trending(limit: int = 5, query: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Fetch trending GitHub repositories created in the last 24 hours.
-    
+
     Args:
         limit: Maximum number of repositories to return.
-        
+        query: Optional domain keyword filter (e.g. "kubernetes OR cloud").
+
     Returns:
         List of signal dictionaries with standardized schema.
     """
     base_url = "https://api.github.com/search/repositories"
     date_query = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
-    
+    search_q = f"{query} created:>{date_query} sort:stars" if query else f"created:>{date_query} sort:stars"
+
     params = {
-        "q": f"created:>{date_query} sort:stars",
+        "q": search_q,
         "per_page": limit
     }
     

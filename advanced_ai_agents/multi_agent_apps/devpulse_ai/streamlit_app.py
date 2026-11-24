@@ -3,23 +3,18 @@ import os
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 
-load_dotenv()
-
-# Import pipeline components from main.py and agents
-from main import collect_signals, DEFAULT_SIGNAL_LIMIT
-from agents import (
-    SignalCollector,
-    RelevanceAgent,
-    RiskAgent,
-    SynthesisAgent
-)
-
-# Page Config
+# Page Config must run first before heavy imports or other st calls
 st.set_page_config(
     page_title="DevPulseAI – Signal Intelligence Demo",
     page_icon="🧠",
     layout="wide"
 )
+
+# Load .env before importing agents so OPENROUTER_API_KEY and MODEL_* vars are available
+load_dotenv()
+
+from config import DOMAIN_PRESETS, get_domain_profile
+DEFAULT_SIGNAL_LIMIT = 5
 
 # Custom CSS for glassmorphism and premium feel
 st.markdown("""
@@ -76,11 +71,23 @@ scores them for relevance, identifies potential risks, and synthesizes a final i
 st.sidebar.header("⚙️ Pipeline Configuration")
 
 # API Key
-api_key = st.sidebar.text_input("OpenAI API Key (optional)", type="password", help="Provide an OpenAI API key. If not provided, agents will use fallback heuristic logic.")
+api_key = st.sidebar.text_input(
+    "OpenRouter API Key (optional)",
+    type="password",
+    help="Overrides OPENROUTER_API_KEY from .env for this session.",
+)
 if api_key:
-    # RelevanceAgent / RiskAgent / SynthesisAgent all use agno's OpenAIChat,
-    # which reads OPENAI_API_KEY.
-    os.environ["OPENAI_API_KEY"] = api_key
+    os.environ["OPENROUTER_API_KEY"] = api_key
+
+# Target Domain Selection (preset-only dropdown; drives source queries + relevance scoring)
+selected_domain = st.sidebar.selectbox(
+    "Target Domain",
+    options=list(DOMAIN_PRESETS.keys()),
+    index=0,
+    help="Select the engineering domain used to filter sources and score signal relevance.",
+)
+profile = get_domain_profile(selected_domain)
+st.sidebar.caption(f"**Focus:** {profile.domain_focus}")
 
 # Source Selection
 sources = st.sidebar.multiselect(
@@ -88,6 +95,8 @@ sources = st.sidebar.multiselect(
     ["GitHub", "ArXiv", "HackerNews", "Medium", "HuggingFace"],
     default=["GitHub", "ArXiv", "HackerNews", "Medium", "HuggingFace"]
 )
+if "HuggingFace" in sources and not profile.huggingface_supported:
+    st.sidebar.caption("ℹ️ HuggingFace only publishes ML models (lower relevance outside AI/ML).")
 
 # Signal Count Slider
 signal_count = st.sidebar.slider(
@@ -105,18 +114,25 @@ if run_button:
     if not sources:
         st.warning("Please select at least one signal source.")
     else:
-        # Initialize Agents
-        collector = SignalCollector()
-        relevance = RelevanceAgent()
-        risk = RiskAgent()
-        synthesis = SynthesisAgent()
+        # Lazy-import heavy agent dependencies (agno/openai) on Run so the UI renders immediately
+        with st.status("🔧 Loading AI agents...", expanded=False) as init_status:
+            from agents import (
+                SignalCollector,
+                RelevanceAgent,
+                RiskAgent,
+                SynthesisAgent,
+            )
+            collector = SignalCollector()
+            relevance = RelevanceAgent(profile=profile)
+            risk = RiskAgent()
+            synthesis = SynthesisAgent()
+            init_status.update(label="✅ Agents ready", state="complete")
         
         # Step 1: Collection
-        with st.status("📡 Collecting and normalizing signals...", expanded=True) as status:
-            st.write("Fetching raw data from sources...")
+        with st.status(f"📡 Collecting and normalizing signals for {profile.name}...", expanded=True) as status:
+            st.write(f"Fetching domain-aligned data for **{profile.name}**...")
             
-            # Map selected sources to fetch calls (simplified reuse)
-            # We use the collect_signals logic but filter by selected sources
+            # Fetch from selected sources using domain-specific queries/feeds
             raw_signals = []
             from adapters.github import fetch_github_trending
             from adapters.arxiv import fetch_arxiv_papers
@@ -126,16 +142,16 @@ if run_button:
             
             if "GitHub" in sources:
                 st.write("Fetching GitHub trending...")
-                raw_signals.extend(fetch_github_trending(limit=signal_count))
+                raw_signals.extend(fetch_github_trending(limit=signal_count, query=profile.github_query))
             if "ArXiv" in sources:
                 st.write("Fetching ArXiv papers...")
-                raw_signals.extend(fetch_arxiv_papers(limit=signal_count))
+                raw_signals.extend(fetch_arxiv_papers(limit=signal_count, search_query=profile.arxiv_query))
             if "HackerNews" in sources:
                 st.write("Fetching HackerNews stories...")
-                raw_signals.extend(fetch_hackernews_stories(limit=signal_count))
+                raw_signals.extend(fetch_hackernews_stories(limit=signal_count, query=profile.hn_query))
             if "Medium" in sources:
                 st.write("Fetching Medium blogs...")
-                raw_signals.extend(fetch_medium_blogs(limit=min(signal_count, 3)))
+                raw_signals.extend(fetch_medium_blogs(limit=min(signal_count, 3), feeds=profile.medium_feeds))
             if "HuggingFace" in sources:
                 st.write("Fetching HuggingFace models...")
                 raw_signals.extend(fetch_huggingface_models(limit=signal_count))
@@ -148,7 +164,7 @@ if run_button:
         col1, col2 = st.columns(2)
         
         with col1:
-            with st.status("📊 Scoring Relevance...") as status:
+            with st.status(f"📊 Scoring Relevance ({profile.name})...") as status:
                 scored = relevance.score_batch(normalized)
                 status.update(label="✅ Relevance scoring complete", state="complete")
         
@@ -165,6 +181,7 @@ if run_button:
         # Display Results
         st.divider()
         st.header("📄 Intelligence Digest")
+        st.caption(f"Target Domain: **{profile.name}** · Stack: {', '.join(profile.tech_stack)}")
         
         # Executive Summary
         st.info(f"**Executive Summary:** {digest['executive_summary']}")
@@ -177,8 +194,13 @@ if run_button:
         st.divider()
         st.subheader("🎯 Priority Signals")
         
-        # Display signals in expandable sections
-        for signal in assessed:
+        # Display signals ordered by relevance/priority
+        ordered_signals = sorted(
+            assessed,
+            key=lambda s: s.get("relevance", {}).get("score", 0),
+            reverse=True,
+        )
+        for signal in ordered_signals:
             rel = signal.get("relevance", {})
             risk_info = signal.get("risk", {})
             risk_level = risk_info.get("risk_level", "UNKNOWN")
@@ -208,7 +230,6 @@ if run_button:
 
 else:
     # Landing state
-    st.image("https://raw.githubusercontent.com/Shubhamsaboo/awesome-llm-apps/main/advanced_ai_agents/multi_agent_apps/devpulse_ai/assets/logo.png", width=200) # Placeholder for logo logic
     st.info("👈 Use the sidebar to configure the pipeline and click 'Run' to begin.")
     
     # Educational Section
